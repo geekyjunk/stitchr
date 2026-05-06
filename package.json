@@ -9,6 +9,9 @@
     "type": "git",
     "url": "git+https://github.com/geekyjunk/stitchr.git"
   },
+  "bin": {
+    "stitchr": "./index.js"
+  },
   "author": "geekyjunk",
   "license": "ISC",
   "bugs": {
