@@ -18,5 +18,8 @@
     "url": "https://github.com/geekyjunk/stitchr/issues"
   },
   "homepage": "https://github.com/geekyjunk/stitchr#readme",
-  "description": ""
+  "description": "",
+  "dependencies": {
+    "commander": "^14.0.3"
+  }
 }
