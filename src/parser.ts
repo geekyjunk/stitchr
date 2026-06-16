@@ -1,5 +1,5 @@
 const parser = require("@babel/parser")
-const {traverseImports} = require('./traverse')
+const { traverseImports } = require('./traverse')
 const path = require('path');
 const fs = require("fs")
 function parseFile(filePath: string = "") {
@@ -11,7 +11,8 @@ function parseFile(filePath: string = "") {
     const resolvedFilePath = path.join(basePath, filePath)
     const entryFileContent = fs.readFileSync(resolvedFilePath, "utf-8")
     const ast = parser.parse(entryFileContent, options);
-    traverseImports(ast)
+    const rootpath = path.join(basePath, "../")
+    traverseImports(ast, rootpath, filePath)
 
 }
 module.exports = { parseFile }
