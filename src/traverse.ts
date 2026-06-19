@@ -1,5 +1,8 @@
 const traverse = require("@babel/traverse").default
 const path = require('path')
+const fs = require('fs');
+const { createAst } = require('./ast')
+const { PARSER_OPTIONS } = require('./constants')
 
 function resolveRelativeImports(importPath: string, rootPath: string, filePath: string) {
   const pathForImport = path.resolve(path.dirname(filePath), importPath)
@@ -15,18 +18,24 @@ function resolveRelativeImports(importPath: string, rootPath: string, filePath: 
 function traverseImports(ast: any, rootpath: string, filePath: string) {
   traverse(ast, {
     // For ES6 import statememts
-    ImportDeclaration(path: any) {
-      const node = path.node
+    ImportDeclaration(nodePath: any) {
+      const node = nodePath.node
       console.log(resolveRelativeImports(node.source.value, rootpath, filePath))
     },
     // CallExpression represents function/ method call node in AST => For require method
-    CallExpression(path: any) {
-      const node = path.node
+    CallExpression(nodePath: any) {
+      const node = nodePath.node
       if (
-        path.node.callee.type === "Identifier" &&
-        path.node.callee.name === "require"
+        nodePath.node.callee.type === "Identifier" &&
+        nodePath.node.callee.name === "require"
       ) {
-        console.log(resolveRelativeImports(node.arguments[0].value, rootpath, filePath));
+        const resolvedFilePath = resolveRelativeImports(node.arguments[0].value, rootpath, filePath);
+
+        const fileExtension = path.extname(filePath);
+        const fileContent = fs.readFileSync(path.resolve(rootpath, resolvedFilePath + fileExtension), 'utf-8')
+        const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
+        console.log(resolvedFilePath,resolvedFileAst)
+        traverseImports(resolvedFileAst, rootpath, filePath+fileExtension);
       }
     },
   })
