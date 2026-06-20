@@ -25,7 +25,7 @@ function resolveRelativeImports(importPath: string, rootPath: string, filePath: 
  * @param rootpath root path of project directory
  * @param filePath path for file in process (on first run -> entry file, then subsequently resolved path for imports)
  */
-function traverseImports(ast: any, rootpath: string, filePath: string) {
+function traverseImports(ast: any, rootpath: string, filePath: string, visitedSet: Set<string>, visitedInCurrentCycle: Set<string>) {
   traverse(ast, {
     // For ES6 import statememts
     ImportDeclaration(nodePath: any) {
@@ -36,16 +36,30 @@ function traverseImports(ast: any, rootpath: string, filePath: string) {
     CallExpression(nodePath: any) {
       const node = nodePath.node
       if (
-        nodePath.node.callee.type === "Identifier" &&
-        nodePath.node.callee.name === "require"
+        node.callee.type === "Identifier" &&
+        node.callee.name === "require" &&
+        node.arguments[0]?.type === "StringLiteral"
       ) {
         const resolvedFilePath = resolveRelativeImports(node.arguments[0].value, rootpath, filePath);
-
         const resolvedPathWithExtension = resolveFilePath(rootpath, resolvedFilePath)
+
+        if (visitedInCurrentCycle.has(resolvedPathWithExtension)) {
+          const relativePath = path.relative(rootpath, resolvedPathWithExtension).split(path.sep).join("/")
+          console.warn(`Circular dependency detected: ${relativePath}`)
+          return
+        }
+
+        if (visitedSet.has(resolvedPathWithExtension)) {
+          return
+        }
+
+        visitedInCurrentCycle.add(resolvedPathWithExtension)
         const fileContent = fs.readFileSync(resolvedPathWithExtension, 'utf-8')
         const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
+        traverseImports(resolvedFileAst, rootpath, resolvedFilePath, visitedSet, visitedInCurrentCycle)
 
-        traverseImports(resolvedFileAst, rootpath, resolvedFilePath);
+        visitedInCurrentCycle.delete(resolvedPathWithExtension)
+        visitedSet.add(resolvedPathWithExtension)
       }
     },
   })

@@ -14,7 +14,13 @@ function parseFile(filePath: string = "") {
     const ast = createAst(entryFileContent, PARSER_OPTIONS)
     const relativeFilePath = path.relative(projectRoot, resolvedEntryPath).split(path.sep).join("/")
 
-    traverseImports(ast, projectRoot, relativeFilePath)
+    const visitedSet = new Set<string>()
+    const visitedInCurrentCycle = new Set<string>()
+
+    visitedInCurrentCycle.add(resolvedEntryPath)
+    traverseImports(ast, projectRoot, relativeFilePath, visitedSet, visitedInCurrentCycle)
+    visitedInCurrentCycle.delete(resolvedEntryPath)
+    visitedSet.add(resolvedEntryPath)
 }
 
 module.exports = { parseFile }
