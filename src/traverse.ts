@@ -6,7 +6,10 @@ const { PARSER_OPTIONS } = require('./constants')
 const { resolveFilePath } = require('./utils')
 
 function resolveRelativeImports(importPath: string, rootPath: string, filePath: string) {
-  const pathForImport = path.resolve(path.dirname(filePath), importPath)
+  const calleeFilePath = path.resolve(rootPath, path.dirname(filePath))
+
+  const pathForImport = path.resolve(calleeFilePath, importPath)
+
   let relativePath = path.relative(rootPath, pathForImport)
 
   if (relativePath.startsWith("dist/")) {
@@ -27,7 +30,7 @@ function traverseImports(ast: any, rootpath: string, filePath: string) {
     // For ES6 import statememts
     ImportDeclaration(nodePath: any) {
       const node = nodePath.node
-      console.log(resolveRelativeImports(node.source.value, rootpath, filePath))
+      console.log(node.source.value)
     },
     // CallExpression represents function/ method call node in AST => For require method
     CallExpression(nodePath: any) {
@@ -41,7 +44,7 @@ function traverseImports(ast: any, rootpath: string, filePath: string) {
         const resolvedPathWithExtension = resolveFilePath(rootpath, resolvedFilePath)
         const fileContent = fs.readFileSync(resolvedPathWithExtension, 'utf-8')
         const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
-        console.log(resolvedFilePath, resolvedFileAst)
+
         traverseImports(resolvedFileAst, rootpath, resolvedFilePath);
       }
     },
