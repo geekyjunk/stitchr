@@ -1,2 +1,2 @@
-const { greet } = require('./greet')
+const { greet } = require('./modules/greet')
 greet("Naman")
