@@ -4,6 +4,7 @@ const fs = require("fs")
 const { PARSER_OPTIONS } = require('./constants')
 const { createAst } = require('./ast')
 const { resolveFilePath, getRootPath } = require('./utils')
+import type { DependencyGraph } from './types'
 
 function parseFile(filePath: string = "") {
     const absoluteEntryPath = path.resolve(process.cwd(), filePath)
@@ -18,7 +19,10 @@ function parseFile(filePath: string = "") {
     const visitedInCurrentCycle = new Set<string>()
 
     visitedInCurrentCycle.add(resolvedEntryPath)
-    traverseImports(ast, projectRoot, relativeFilePath, visitedSet, visitedInCurrentCycle)
+    const dependencyGraph: DependencyGraph = {};
+
+    traverseImports(ast, projectRoot, relativeFilePath, visitedSet, visitedInCurrentCycle, dependencyGraph)
+    console.log(dependencyGraph)
     visitedInCurrentCycle.delete(resolvedEntryPath)
     visitedSet.add(resolvedEntryPath)
 }
