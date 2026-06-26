@@ -6,7 +6,7 @@ const { createAst } = require('./ast')
 const { resolveFilePath, getRootPath } = require('./utils')
 import type { DependencyGraph } from './types'
 
-function parseFile(filePath: string = "") {
+function parseFile(filePath: string = "", options: { showGraph?: boolean } = {}) {
     const absoluteEntryPath = path.resolve(process.cwd(), filePath)
     const projectRoot = getRootPath(absoluteEntryPath)
     const relativeEntryPath = path.relative(projectRoot, absoluteEntryPath)
@@ -22,7 +22,11 @@ function parseFile(filePath: string = "") {
     const dependencyGraph: DependencyGraph = {};
 
     traverseImports(ast, projectRoot, relativeFilePath, visitedSet, visitedInCurrentCycle, dependencyGraph)
-    console.log(dependencyGraph)
+
+    if (options.showGraph) {
+        console.log(JSON.stringify(dependencyGraph, null, 2))
+    }
+
     visitedInCurrentCycle.delete(resolvedEntryPath)
     visitedSet.add(resolvedEntryPath)
 }

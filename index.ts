@@ -13,9 +13,10 @@ program
   .command("build")
   .description("Builds a file")
   .argument("[fileName]", "file name to build")
-  .action((name: string, options: { [key: string]: any }) => {
+  .option("--show-graph", "show the dependency graph")
+  .action((name: string, options: { showGraph?: boolean }) => {
     console.log("Building a file...")
-    parseFile(name);
+    parseFile(name, { showGraph: options.showGraph });
     console.log('Built')
   });
 
