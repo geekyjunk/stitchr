@@ -13,14 +13,16 @@ function toRelativePath(rootpath: string, absolutePath: string) {
 function ensureModule(
   dependencyGraph: DependencyGraph,
   filePath: string,
-  nextId: { value: number }
+  nextId: { value: number },
+  moduleMap: { [filePath: string]: number }
 ) {
   if (!dependencyGraph[filePath]) {
     dependencyGraph[filePath] = {
       file: filePath,
-      id: nextId.value++,
+      id: nextId.value,
       deps: [],
     }
+    moduleMap[filePath] = nextId.value++;
   }
   return dependencyGraph[filePath]
 }
@@ -56,9 +58,10 @@ function traverseImports(
   visitedSet: Set<string>,
   visitedInCurrentCycle: Set<string>,
   dependencyGraph: DependencyGraph,
-  nextId: { value: number }
+  nextId: { value: number },
+  moduleMap: { [filePath: string]: number }
 ) {
-  const moduleEntry = ensureModule(dependencyGraph, filePath, nextId)
+  const moduleEntry = ensureModule(dependencyGraph, filePath, nextId, moduleMap)
 
   traverse(ast, {
     // For ES6 import statememts
@@ -100,7 +103,8 @@ function traverseImports(
           visitedSet,
           visitedInCurrentCycle,
           dependencyGraph,
-          nextId
+          nextId,
+          moduleMap
         )
 
         visitedInCurrentCycle.delete(resolvedPathWithExtension)

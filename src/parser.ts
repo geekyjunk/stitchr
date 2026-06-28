@@ -21,13 +21,13 @@ function parseFile(filePath: string = "", options: { showGraph?: boolean } = {})
     visitedInCurrentCycle.add(resolvedEntryPath)
     const dependencyGraph: DependencyGraph = {};
     const nextId = { value: 0 }
-
-    traverseImports(ast, projectRoot, relativeFilePath, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId)
+    const moduleMap = {}
+    traverseImports(ast, projectRoot, relativeFilePath, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
 
     if (options.showGraph) {
         console.log(JSON.stringify(dependencyGraph, null, 2))
     }
-
+console.log(moduleMap)
     visitedInCurrentCycle.delete(resolvedEntryPath)
     visitedSet.add(resolvedEntryPath)
 }
