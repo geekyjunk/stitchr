@@ -1,4 +1,4 @@
-const { traverseImports } = require('./traverse')
+const { traverseImports, createModuleRegistry } = require('./traverse')
 const path = require('path');
 const fs = require("fs")
 const { PARSER_OPTIONS } = require('./constants')
@@ -27,9 +27,13 @@ function parseFile(filePath: string = "", options: { showGraph?: boolean } = {})
     if (options.showGraph) {
         console.log(JSON.stringify(dependencyGraph, null, 2))
     }
-console.log(moduleMap)
+
     visitedInCurrentCycle.delete(resolvedEntryPath)
     visitedSet.add(resolvedEntryPath)
+
+    /** Generate Module Registry */
+    const moduleRegistry = {};
+    createModuleRegistry(moduleRegistry, dependencyGraph, moduleMap, projectRoot)
 }
 
 module.exports = { parseFile }
