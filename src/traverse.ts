@@ -6,7 +6,25 @@ const { PARSER_OPTIONS } = require('./constants')
 const { resolveFilePath } = require('./utils')
 import type { DependencyGraph } from './types'
 
-let moduleId: number = 0;
+function toRelativePath(rootpath: string, absolutePath: string) {
+  return path.relative(rootpath, absolutePath).split(path.sep).join("/")
+}
+
+function ensureModule(
+  dependencyGraph: DependencyGraph,
+  filePath: string,
+  nextId: { value: number }
+) {
+  if (!dependencyGraph[filePath]) {
+    dependencyGraph[filePath] = {
+      file: filePath,
+      id: nextId.value++,
+      deps: [],
+    }
+  }
+  return dependencyGraph[filePath]
+}
+
 function resolveRelativeImports(importPath: string, rootPath: string, filePath: string) {
   const calleeFilePath = path.resolve(rootPath, path.dirname(filePath))
 
@@ -26,8 +44,22 @@ function resolveRelativeImports(importPath: string, rootPath: string, filePath: 
  * @param ast AST for the entry file
  * @param rootpath root path of project directory
  * @param filePath path for file in process (on first run -> entry file, then subsequently resolved path for imports)
+ * @param visitedSet set for maintaining visited nodes
+ * @param visitedInCurrentCycle set for maintaining visited nodes in current cycle path (to detect circular deps)
+ * @param dependencyGraph output deps graph
+ * @param nextId module id for imports
  */
-function traverseImports(ast: any, rootpath: string, filePath: string, visitedSet: Set<string>, visitedInCurrentCycle: Set<string>, dependencyGraph: DependencyGraph) {
+function traverseImports(
+  ast: any,
+  rootpath: string,
+  filePath: string,
+  visitedSet: Set<string>,
+  visitedInCurrentCycle: Set<string>,
+  dependencyGraph: DependencyGraph,
+  nextId: { value: number }
+) {
+  const moduleEntry = ensureModule(dependencyGraph, filePath, nextId)
+
   traverse(ast, {
     // For ES6 import statememts
     ImportDeclaration(nodePath: any) {
@@ -44,18 +76,9 @@ function traverseImports(ast: any, rootpath: string, filePath: string, visitedSe
       ) {
         const resolvedFilePath = resolveRelativeImports(node.arguments[0].value, rootpath, filePath);
         const resolvedPathWithExtension = resolveFilePath(rootpath, resolvedFilePath)
+        const relativePath = toRelativePath(rootpath, resolvedPathWithExtension)
 
-        const relativePath = path.relative(rootpath, resolvedPathWithExtension).split(path.sep).join("/")
-
-        if (!dependencyGraph[filePath]) {
-          dependencyGraph[filePath] = {
-            file: resolveFilePath(rootpath, filePath),
-            id: moduleId,
-            deps: []
-          }
-          moduleId++;
-        }
-        dependencyGraph[filePath].deps.push(relativePath);
+        moduleEntry.deps.push(relativePath);
 
         if (visitedInCurrentCycle.has(resolvedPathWithExtension)) {
           console.warn(`Circular dependency detected: ${relativePath}`)
@@ -70,22 +93,18 @@ function traverseImports(ast: any, rootpath: string, filePath: string, visitedSe
         const fileContent = fs.readFileSync(resolvedPathWithExtension, 'utf-8')
         const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
 
-        traverseImports(resolvedFileAst, rootpath, resolvedFilePath, visitedSet, visitedInCurrentCycle, dependencyGraph)
+        traverseImports(
+          resolvedFileAst,
+          rootpath,
+          relativePath,
+          visitedSet,
+          visitedInCurrentCycle,
+          dependencyGraph,
+          nextId
+        )
 
         visitedInCurrentCycle.delete(resolvedPathWithExtension)
         visitedSet.add(resolvedPathWithExtension)
-      } else {
-        // Leaf Node with no dependencies
-        if (!dependencyGraph[filePath]) {
-          const resolvedPathWithExtension = resolveFilePath(rootpath, filePath)
-
-          dependencyGraph[filePath] = {
-            file: resolvedPathWithExtension,
-            id: moduleId,
-            deps: []
-          }
-          moduleId++;
-        }
       }
     },
   })
