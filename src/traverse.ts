@@ -6,6 +6,7 @@ const { PARSER_OPTIONS } = require('./constants')
 const { resolveFilePath } = require('./utils')
 import type { DependencyGraph } from './types'
 
+let moduleId: number = 0;
 function resolveRelativeImports(importPath: string, rootPath: string, filePath: string) {
   const calleeFilePath = path.resolve(rootPath, path.dirname(filePath))
 
@@ -48,9 +49,11 @@ function traverseImports(ast: any, rootpath: string, filePath: string, visitedSe
 
         if (!dependencyGraph[filePath]) {
           dependencyGraph[filePath] = {
+            file: resolveFilePath(rootpath, filePath),
+            id: moduleId,
             deps: []
           }
-
+          moduleId++;
         }
         dependencyGraph[filePath].deps.push(relativePath);
 
@@ -66,10 +69,23 @@ function traverseImports(ast: any, rootpath: string, filePath: string, visitedSe
         visitedInCurrentCycle.add(resolvedPathWithExtension)
         const fileContent = fs.readFileSync(resolvedPathWithExtension, 'utf-8')
         const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
+
         traverseImports(resolvedFileAst, rootpath, resolvedFilePath, visitedSet, visitedInCurrentCycle, dependencyGraph)
 
         visitedInCurrentCycle.delete(resolvedPathWithExtension)
         visitedSet.add(resolvedPathWithExtension)
+      } else {
+        // Leaf Node with no dependencies
+        if (!dependencyGraph[filePath]) {
+          const resolvedPathWithExtension = resolveFilePath(rootpath, filePath)
+
+          dependencyGraph[filePath] = {
+            file: resolvedPathWithExtension,
+            id: moduleId,
+            deps: []
+          }
+          moduleId++;
+        }
       }
     },
   })
