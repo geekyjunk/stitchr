@@ -13,8 +13,9 @@ function createBundle(
         throw new Error('No module found with ID=', id);
       }
       const module = { exports: {} }
-      cache[id] = modules[id](require, module, module.exports)
-      return cache[id];
+      cache[id] = module
+      modules[id](require, module, module.exports)
+      return module.exports;
     }
     return require(${entryModuleId});
   })({${parsedModuleRegistry}})`
