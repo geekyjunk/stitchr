@@ -174,7 +174,6 @@ function createModuleRegistry(
     const { code: body } = generate(ast)
     moduleRegistry[id] = `function(require, module, exports) {\n${body}\n}`
   }
-  console.log(moduleRegistry)
 }
 
 module.exports = { traverseImports, createModuleRegistry }

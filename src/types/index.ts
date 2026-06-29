@@ -5,3 +5,7 @@ export type DependencyGraph = {
     deps: string[]
   }
 }
+
+export type ModuleMap = Record<string, number>
+
+export type ModuleRegistry = Record<number, string>

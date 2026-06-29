@@ -14,10 +14,10 @@ program
   .description("Builds a file")
   .argument("[fileName]", "file name to build")
   .option("--show-graph", "show the dependency graph")
-  .action((name: string, options: { showGraph?: boolean }) => {
+  .option("-o, --out <file>", "output bundle path", "dist/bundle.js")
+  .action((name: string, options: { showGraph?: boolean; out?: string }) => {
     console.log("Building a file...")
-    parseFile(name, { showGraph: options.showGraph });
-    console.log('Built')
+    parseFile(name, { showGraph: options.showGraph, out: options.out });
   });
 
 program.parse(process.argv);

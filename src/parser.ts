@@ -4,7 +4,8 @@ const fs = require("fs")
 const { PARSER_OPTIONS } = require('./constants')
 const { createAst } = require('./ast')
 const { resolveFilePath, getRootPath } = require('./utils')
-import type { DependencyGraph } from './types'
+const { createBundle } = require('./runtime')
+import type { DependencyGraph, ModuleMap, ModuleRegistry } from './types'
 
 function parseFile(filePath: string = "", options: { showGraph?: boolean } = {}) {
     const absoluteEntryPath = path.resolve(process.cwd(), filePath)
@@ -21,7 +22,7 @@ function parseFile(filePath: string = "", options: { showGraph?: boolean } = {})
     visitedInCurrentCycle.add(resolvedEntryPath)
     const dependencyGraph: DependencyGraph = {};
     const nextId = { value: 0 }
-    const moduleMap = {}
+    const moduleMap: ModuleMap = {}
     traverseImports(ast, projectRoot, relativeFilePath, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
 
     if (options.showGraph) {
@@ -32,8 +33,12 @@ function parseFile(filePath: string = "", options: { showGraph?: boolean } = {})
     visitedSet.add(resolvedEntryPath)
 
     /** Generate Module Registry */
-    const moduleRegistry = {};
+    const moduleRegistry: ModuleRegistry = {};
     createModuleRegistry(moduleRegistry, dependencyGraph, moduleMap, projectRoot)
+    const entryModuleId = moduleMap[relativeFilePath]
+    console.log(entryModuleId)
+    const bundle = createBundle(moduleRegistry,entryModuleId)
+    console.log(bundle)
 }
 
 module.exports = { parseFile }
