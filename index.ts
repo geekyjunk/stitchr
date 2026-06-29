@@ -17,7 +17,8 @@ program
   .option("-o, --out <file>", "output bundle path", "dist/bundle.js")
   .action((name: string, options: { showGraph?: boolean; out?: string }) => {
     console.log("Building a file...")
-    parseFile(name, { showGraph: options.showGraph, out: options.out });
+    const outputPath = parseFile(name, { showGraph: options.showGraph, out: options.out });
+    console.log(`Built ${outputPath}`)
   });
 
 program.parse(process.argv);

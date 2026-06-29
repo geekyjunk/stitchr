@@ -7,7 +7,7 @@ const { resolveFilePath, getRootPath } = require('./utils')
 const { createBundle } = require('./runtime')
 import type { DependencyGraph, ModuleMap, ModuleRegistry } from './types'
 
-function parseFile(filePath: string = "", options: { showGraph?: boolean } = {}) {
+function parseFile(filePath: string = "", options: { showGraph?: boolean, out?: string } = {}) {
     const absoluteEntryPath = path.resolve(process.cwd(), filePath)
     const projectRoot = getRootPath(absoluteEntryPath)
     const relativeEntryPath = path.relative(projectRoot, absoluteEntryPath)
@@ -36,9 +36,17 @@ function parseFile(filePath: string = "", options: { showGraph?: boolean } = {})
     const moduleRegistry: ModuleRegistry = {};
     createModuleRegistry(moduleRegistry, dependencyGraph, moduleMap, projectRoot)
     const entryModuleId = moduleMap[relativeFilePath]
-    console.log(entryModuleId)
-    const bundle = createBundle(moduleRegistry,entryModuleId)
-    console.log(bundle)
+    if (entryModuleId === undefined) {
+        throw new Error(`Entry module "${relativeFilePath}" was not registered`)
+    }
+
+    const bundle = createBundle(moduleRegistry, entryModuleId)
+    const outputPath = path.resolve(projectRoot, options.out ?? "dist/bundle.js")
+
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+    fs.writeFileSync(outputPath, bundle, "utf-8")
+
+    return outputPath
 }
 
 module.exports = { parseFile }
