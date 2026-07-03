@@ -7,17 +7,17 @@ function createBundle(
     .join(',\n')
   return `(function (modules) {
     const cache = {}
-    function require(id) {
+    function __require(id) {
       if (cache[id]) return cache[id];
       if (!modules[id]) {
         throw new Error('No module found with ID=', id);
       }
       const module = { exports: {} }
       cache[id] = module
-      modules[id](require, module, module.exports)
+      modules[id](__require, module, module.exports)
       return module.exports;
     }
-    return require(${entryModuleId});
+    return __require(${entryModuleId});
   })({${parsedModuleRegistry}})`
 
 }
