@@ -251,6 +251,117 @@ function rewriteImportDeclarations(nodePath: any, depId: number) {
   }
 }
 
+function identifier(name: string) {
+  return { type: "Identifier", name }
+}
+
+function specifierName(node: any) {
+  return node.type === "Identifier" ? node.name : node.value
+}
+
+/**
+ * export { foo, bar as baz }
+ * → exports.foo = foo
+ * → exports.baz = bar
+ */
+function rewriteExportNamedDeclaration(nodePath: any) {
+  const node = nodePath.node
+
+  // Only local export lists — not `export const`, not `export { x } from`
+  if (node.source || node.declaration || node.specifiers.length === 0) {
+    return
+  }
+
+  const statements = node.specifiers.map((specifier: any) => ({
+    type: "ExpressionStatement",
+    expression: {
+      type: "AssignmentExpression",
+      operator: "=",
+      left: {
+        type: "MemberExpression",
+        object: identifier("exports"),
+        property: identifier(specifierName(specifier.exported)),
+        computed: false,
+      },
+      right: identifier(specifierName(specifier.local)),
+    },
+  }))
+
+  if (statements.length === 1) {
+    nodePath.replaceWith(statements[0])
+  } else {
+    nodePath.replaceWithMultiple(statements)
+  }
+}
+
+/**
+ * export default expr
+ * → module.exports = expr
+ */
+function rewriteExportDefaultDeclaration(nodePath: any) {
+  const declaration = nodePath.node.declaration
+
+  // export default function foo() {} / export default class Foo {}
+  if (
+    (declaration.type === "FunctionDeclaration" ||
+      declaration.type === "ClassDeclaration") &&
+    declaration.id
+  ) {
+    nodePath.replaceWithMultiple([
+      declaration,
+      {
+        type: "ExpressionStatement",
+        expression: {
+          type: "AssignmentExpression",
+          operator: "=",
+          left: {
+            type: "MemberExpression",
+            object: identifier("module"),
+            property: identifier("exports"),
+            computed: false,
+          },
+          right: identifier(declaration.id.name),
+        },
+      },
+    ])
+    return
+  }
+
+  let valueNode = declaration
+  if (declaration.type === "FunctionDeclaration") {
+    valueNode = {
+      type: "FunctionExpression",
+      id: null,
+      params: declaration.params,
+      body: declaration.body,
+      generator: declaration.generator,
+      async: declaration.async,
+    }
+  } else if (declaration.type === "ClassDeclaration") {
+    valueNode = {
+      type: "ClassExpression",
+      id: null,
+      superClass: declaration.superClass,
+      body: declaration.body,
+    }
+  }
+
+  nodePath.replaceWith({
+    type: "ExpressionStatement",
+    expression: {
+      type: "AssignmentExpression",
+      operator: "=",
+      left: {
+        type: "MemberExpression",
+        object: identifier("module"),
+        property: identifier("exports"),
+        computed: false,
+      },
+      right: valueNode,
+    },
+  })
+}
+
 /**
  * 
  * @param moduleRegistry Mapping of module ID and its generated code
@@ -286,6 +397,12 @@ function createModuleRegistry(
 
         rewriteImportDeclarations(nodePath, depId)
       },
+      ExportNamedDeclaration(nodePath: any) {
+        rewriteExportNamedDeclaration(nodePath)
+      },
+      ExportDefaultDeclaration(nodePath: any) {
+        rewriteExportDefaultDeclaration(nodePath)
+      },
       CallExpression(nodePath: any) {
         const node = nodePath.node
         if (!isRequireCall(node)) {
@@ -299,12 +416,10 @@ function createModuleRegistry(
           throw new Error(`Could not resolve module id for "${depPath}" imported from "${filePath}"`)
         }
 
-
         nodePath.get('arguments.0').replaceWith({
           type: 'NumericLiteral',
           value: depId,
         })
-
       },
     })
 
