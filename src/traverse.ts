@@ -63,6 +63,40 @@ function isRequireCall(node: any) {
   )
 }
 
+function prepareDependencyGraph(nodePath: any, rootpath: string, filePath: string, moduleEntry: any, visitedSet: Set<string>, visitedInCurrentCycle: Set<string>, dependencyGraph: DependencyGraph, nextId: { value: number }, moduleMap: { [filePath: string]: number }) {
+  const relativePath = resolveDependencyPath(nodePath, rootpath, filePath)
+  const resolvedPathWithExtension = path.resolve(rootpath, relativePath)
+
+  moduleEntry.deps.push(relativePath);
+
+  if (visitedInCurrentCycle.has(resolvedPathWithExtension)) {
+    console.warn(`Circular dependency detected: ${relativePath}`)
+    return
+  }
+
+  if (visitedSet.has(resolvedPathWithExtension)) {
+    return
+  }
+
+  visitedInCurrentCycle.add(resolvedPathWithExtension)
+  const fileContent = fs.readFileSync(resolvedPathWithExtension, 'utf-8')
+  const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
+
+  traverseImports(
+    resolvedFileAst,
+    rootpath,
+    relativePath,
+    visitedSet,
+    visitedInCurrentCycle,
+    dependencyGraph,
+    nextId,
+    moduleMap
+  )
+
+  visitedInCurrentCycle.delete(resolvedPathWithExtension)
+  visitedSet.add(resolvedPathWithExtension)
+}
+
 /**
  * 
  * @param ast AST for the entry file
@@ -89,43 +123,13 @@ function traverseImports(
     // For ES6 import statememts
     ImportDeclaration(nodePath: any) {
       const node = nodePath.node
-      console.log(node.source.value)
+      prepareDependencyGraph(node.source.value, rootpath, filePath, moduleEntry, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
     },
     // CallExpression represents function/ method call node in AST => For require method
     CallExpression(nodePath: any) {
       const node = nodePath.node
       if (isRequireCall(node)) {
-        const relativePath = resolveDependencyPath(node.arguments[0].value, rootpath, filePath)
-        const resolvedPathWithExtension = path.resolve(rootpath, relativePath)
-
-        moduleEntry.deps.push(relativePath);
-
-        if (visitedInCurrentCycle.has(resolvedPathWithExtension)) {
-          console.warn(`Circular dependency detected: ${relativePath}`)
-          return
-        }
-
-        if (visitedSet.has(resolvedPathWithExtension)) {
-          return
-        }
-
-        visitedInCurrentCycle.add(resolvedPathWithExtension)
-        const fileContent = fs.readFileSync(resolvedPathWithExtension, 'utf-8')
-        const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
-
-        traverseImports(
-          resolvedFileAst,
-          rootpath,
-          relativePath,
-          visitedSet,
-          visitedInCurrentCycle,
-          dependencyGraph,
-          nextId,
-          moduleMap
-        )
-
-        visitedInCurrentCycle.delete(resolvedPathWithExtension)
-        visitedSet.add(resolvedPathWithExtension)
+        prepareDependencyGraph(node.arguments[0].value, rootpath, filePath, moduleEntry, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
       }
     },
   })
