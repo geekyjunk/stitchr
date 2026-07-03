@@ -135,6 +135,122 @@ function traverseImports(
   })
 }
 
+function createRequireCall(depId: number) {
+  return {
+    type: "CallExpression",
+    callee: { type: "Identifier", name: "require" },
+    arguments: [{ type: "NumericLiteral", value: depId }],
+  }
+}
+
+function namedImportProperties(namedSpecs: any[]) {
+  return namedSpecs.map((specifier: any) => {
+    const importedName =
+      specifier.imported.type === "Identifier"
+        ? specifier.imported.name
+        : specifier.imported.value
+    const localName = specifier.local.name
+
+    return {
+      type: "ObjectProperty",
+      key: { type: "Identifier", name: importedName },
+      value: { type: "Identifier", name: localName },
+      computed: false,
+      shorthand: importedName === localName,
+    }
+  })
+}
+
+function rewriteImportDeclarations(nodePath: any, depId: number) {
+  const currentNode = nodePath.node
+  const requireCall = createRequireCall(depId)
+  const defaultSpec = currentNode.specifiers.find(
+    (specifier: any) => specifier.type === "ImportDefaultSpecifier"
+  )
+  const namedSpecs = currentNode.specifiers.filter(
+    (specifier: any) => specifier.type === "ImportSpecifier"
+  )
+
+  // import './mod'
+  if (currentNode.specifiers.length === 0) {
+    nodePath.replaceWith({
+      type: "ExpressionStatement",
+      expression: requireCall,
+    })
+    return
+  }
+
+  // import { greet, convert as c } from './mod'
+  // → const { greet, convert: c } = require(id)
+  if (!defaultSpec && namedSpecs.length > 0) {
+    nodePath.replaceWith({
+      type: "VariableDeclaration",
+      kind: "const",
+      declarations: [
+        {
+          type: "VariableDeclarator",
+          id: {
+            type: "ObjectPattern",
+            properties: namedImportProperties(namedSpecs),
+          },
+          init: requireCall,
+        },
+      ],
+    })
+    return
+  }
+
+  // import foo from './mod'
+  // → const foo = require(id)
+  if (defaultSpec && namedSpecs.length === 0) {
+    nodePath.replaceWith({
+      type: "VariableDeclaration",
+      kind: "const",
+      declarations: [
+        {
+          type: "VariableDeclarator",
+          id: { type: "Identifier", name: defaultSpec.local.name },
+          init: requireCall,
+        },
+      ],
+    })
+    return
+  }
+
+  // import foo, { greet } from './mod'
+  // → const foo = require(id)
+  // → const { greet } = foo
+  if (defaultSpec && namedSpecs.length > 0) {
+    nodePath.replaceWithMultiple([
+      {
+        type: "VariableDeclaration",
+        kind: "const",
+        declarations: [
+          {
+            type: "VariableDeclarator",
+            id: { type: "Identifier", name: defaultSpec.local.name },
+            init: requireCall,
+          },
+        ],
+      },
+      {
+        type: "VariableDeclaration",
+        kind: "const",
+        declarations: [
+          {
+            type: "VariableDeclarator",
+            id: {
+              type: "ObjectPattern",
+              properties: namedImportProperties(namedSpecs),
+            },
+            init: { type: "Identifier", name: defaultSpec.local.name },
+          },
+        ],
+      },
+    ])
+  }
+}
+
 /**
  * 
  * @param moduleRegistry Mapping of module ID and its generated code
@@ -159,6 +275,17 @@ function createModuleRegistry(
     const ast = createAst(fileContent, PARSER_OPTIONS)
 
     traverse(ast, {
+      ImportDeclaration(nodePath: any) {
+        const node = nodePath.node
+        const depPath = resolveDependencyPath(node.source.value, projectRoot, filePath)
+        const depId = moduleMap[depPath]
+
+        if (depId === undefined) {
+          throw new Error(`Could not resolve module id for "${depPath}" imported from "${filePath}"`)
+        }
+
+        rewriteImportDeclarations(nodePath, depId)
+      },
       CallExpression(nodePath: any) {
         const node = nodePath.node
         if (!isRequireCall(node)) {
