@@ -29,6 +29,9 @@ function ensureModule(
   return dependencyGraph[filePath]
 }
 
+/**
+ * Resolve the relative path for the import statement from the current file path
+ */
 function resolveRelativeImports(importPath: string, rootPath: string, filePath: string) {
   const calleeFilePath = path.resolve(rootPath, path.dirname(filePath))
 
@@ -43,6 +46,9 @@ function resolveRelativeImports(importPath: string, rootPath: string, filePath: 
   return relativePath
 }
 
+/**
+ * Resolve the dependency path for the import statement from project root along with file extension
+ */
 function resolveDependencyPath(importPath: string, rootpath: string, filePath: string) {
   const resolvedFilePath = resolveRelativeImports(importPath, rootpath, filePath)
   const resolvedPathWithExtension = resolveFilePath(rootpath, resolvedFilePath)
