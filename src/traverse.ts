@@ -120,9 +120,31 @@ function traverseImports(
   const moduleEntry = ensureModule(dependencyGraph, filePath, nextId, moduleMap)
 
   traverse(ast, {
-    // For ES6 import statememts
+    // For ES6 import statements
     ImportDeclaration(nodePath: any) {
       const node = nodePath.node
+      prepareDependencyGraph(node.source.value, rootpath, filePath, moduleEntry, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
+    },
+    // export * as ns from './mod' (ExportNamedDeclaration with ExportNamespaceSpecifier)
+    ExportNamedDeclaration(nodePath: any) {
+      const node = nodePath.node
+      if (!node.source) {
+        return
+      }
+      const isNamespaceExport = node.specifiers.some(
+        (specifier: any) => specifier.type === "ExportNamespaceSpecifier"
+      )
+      if (!isNamespaceExport) {
+        return
+      }
+      prepareDependencyGraph(node.source.value, rootpath, filePath, moduleEntry, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
+    },
+    // export * as ns from './mod' (ExportAllDeclaration with exported name)
+    ExportAllDeclaration(nodePath: any) {
+      const node = nodePath.node
+      if (!node.exported) {
+        return
+      }
       prepareDependencyGraph(node.source.value, rootpath, filePath, moduleEntry, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
     },
     // CallExpression represents function/ method call node in AST => For require method
@@ -167,6 +189,9 @@ function rewriteImportDeclarations(nodePath: any, depId: number) {
   const defaultSpec = currentNode.specifiers.find(
     (specifier: any) => specifier.type === "ImportDefaultSpecifier"
   )
+  const namespaceSpec = currentNode.specifiers.find(
+    (specifier: any) => specifier.type === "ImportNamespaceSpecifier"
+  )
   const namedSpecs = currentNode.specifiers.filter(
     (specifier: any) => specifier.type === "ImportSpecifier"
   )
@@ -177,6 +202,55 @@ function rewriteImportDeclarations(nodePath: any, depId: number) {
       type: "ExpressionStatement",
       expression: requireCall,
     })
+    return
+  }
+
+  // import * as ns from './mod'
+  // → const ns = require(id)
+  if (namespaceSpec && !defaultSpec && namedSpecs.length === 0) {
+    nodePath.replaceWith({
+      type: "VariableDeclaration",
+      kind: "const",
+      declarations: [
+        {
+          type: "VariableDeclarator",
+          id: { type: "Identifier", name: namespaceSpec.local.name },
+          init: requireCall,
+        },
+      ],
+    })
+    return
+  }
+
+  // import foo, * as ns from './mod'
+  // → const ns = require(id)
+  // → const foo = ns
+  if (namespaceSpec && defaultSpec && namedSpecs.length === 0) {
+    const nsName = namespaceSpec.local.name
+    nodePath.replaceWithMultiple([
+      {
+        type: "VariableDeclaration",
+        kind: "const",
+        declarations: [
+          {
+            type: "VariableDeclarator",
+            id: { type: "Identifier", name: nsName },
+            init: requireCall,
+          },
+        ],
+      },
+      {
+        type: "VariableDeclaration",
+        kind: "const",
+        declarations: [
+          {
+            type: "VariableDeclarator",
+            id: { type: "Identifier", name: defaultSpec.local.name },
+            init: { type: "Identifier", name: nsName },
+          },
+        ],
+      },
+    ])
     return
   }
 
@@ -263,12 +337,54 @@ function specifierName(node: any) {
  * export { foo, bar as baz }
  * → exports.foo = foo
  * → exports.baz = bar
+ *
+ * export * as ns from './mod'
+ * → exports.ns = require(id)
  */
-function rewriteExportNamedDeclaration(nodePath: any) {
+function rewriteExportNamedDeclaration(
+  nodePath: any,
+  projectRoot: string,
+  filePath: string,
+  moduleMap: Record<string, number>
+) {
   const node = nodePath.node
 
+  // export * as ns from './mod'
+  if (node.source) {
+    const namespaceSpec = node.specifiers.find(
+      (specifier: any) => specifier.type === "ExportNamespaceSpecifier"
+    )
+    if (!namespaceSpec) {
+      return
+    }
+
+    const depPath = resolveDependencyPath(node.source.value, projectRoot, filePath)
+    const depId = moduleMap[depPath]
+    if (depId === undefined) {
+      throw new Error(
+        `Could not resolve module id for "${depPath}" re-exported from "${filePath}"`
+      )
+    }
+
+    nodePath.replaceWith({
+      type: "ExpressionStatement",
+      expression: {
+        type: "AssignmentExpression",
+        operator: "=",
+        left: {
+          type: "MemberExpression",
+          object: identifier("exports"),
+          property: identifier(specifierName(namespaceSpec.exported)),
+          computed: false,
+        },
+        right: createRequireCall(depId),
+      },
+    })
+    return
+  }
+
   // Only local export lists — not `export const`, not `export { x } from`
-  if (node.source || node.declaration || node.specifiers.length === 0) {
+  if (node.declaration || node.specifiers.length === 0) {
     return
   }
 
@@ -363,6 +479,48 @@ function rewriteExportDefaultDeclaration(nodePath: any) {
 }
 
 /**
+ * export * as ns from './mod'
+ * → exports.ns = require(id)
+ */
+function rewriteExportAllDeclaration(
+  nodePath: any,
+  projectRoot: string,
+  filePath: string,
+  moduleMap: Record<string, number>
+) {
+  const node = nodePath.node
+
+  // Only namespace form — leave bare `export * from` alone
+  if (!node.exported) {
+    return
+  }
+
+  const depPath = resolveDependencyPath(node.source.value, projectRoot, filePath)
+  const depId = moduleMap[depPath]
+  if (depId === undefined) {
+    throw new Error(
+      `Could not resolve module id for "${depPath}" re-exported from "${filePath}"`
+    )
+  }
+
+  const nsName = node.exported.type === "Identifier" ? node.exported.name : node.exported.value
+  nodePath.replaceWith({
+    type: "ExpressionStatement",
+    expression: {
+      type: "AssignmentExpression",
+      operator: "=",
+      left: {
+        type: "MemberExpression",
+        object: identifier("exports"),
+        property: identifier(nsName),
+        computed: false,
+      },
+      right: createRequireCall(depId),
+    },
+  })
+}
+
+/**
  * 
  * @param moduleRegistry Mapping of module ID and its generated code
  * @param dependencyGraph dependency graph of all resolved imports
@@ -398,10 +556,13 @@ function createModuleRegistry(
         rewriteImportDeclarations(nodePath, depId)
       },
       ExportNamedDeclaration(nodePath: any) {
-        rewriteExportNamedDeclaration(nodePath)
+        rewriteExportNamedDeclaration(nodePath, projectRoot, filePath, moduleMap)
       },
       ExportDefaultDeclaration(nodePath: any) {
         rewriteExportDefaultDeclaration(nodePath)
+      },
+      ExportAllDeclaration(nodePath: any) {
+        rewriteExportAllDeclaration(nodePath, projectRoot, filePath, moduleMap)
       },
       CallExpression(nodePath: any) {
         const node = nodePath.node
