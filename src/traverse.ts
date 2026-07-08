@@ -548,13 +548,25 @@ function rewriteExportNamedDeclaration(
 }
 
 /**
- * This is for the case when exporting default and named from a single file.
- * Preserve any named exports already on module.exports when assigning default:
- *   var __stitchr_named = module.exports;
- *   module.exports = <default>;
+ * This is for the case when exporting default.
+ *
+ * Example:
+ *   export const extra = 42
+ *   export default function run() {}
+ *
+ * After named export rewrite:
+ *   module.exports = { extra: 42 }
+ *
+ * Naive default rewrite (module.exports = run) would wipe extra.
+ * So we preserve named exports:
+ *   var __stitchr_named = module.exports;          // { extra: 42 }
+ *   module.exports = run;                          // function, no .extra
  *   for (var __stitchr_key in __stitchr_named) {
  *     module.exports[__stitchr_key] = __stitchr_named[__stitchr_key];
  *   }
+ *
+ * Before for..in:  module.exports.extra === undefined
+ * After for..in:   module.exports.extra === 42  (same function, props copied on)
  */
 function rewriteDefaultExport(valueNode: any) {
   return [
