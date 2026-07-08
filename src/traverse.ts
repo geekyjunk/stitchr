@@ -125,16 +125,10 @@ function traverseImports(
       const node = nodePath.node
       prepareDependencyGraph(node.source.value, rootpath, filePath, moduleEntry, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
     },
-    // export * as ns from './mod' (ExportNamedDeclaration with ExportNamespaceSpecifier)
+    // export { x } from './mod'  |  export { default as x } from './mod'  |  export * as ns from './mod'
     ExportNamedDeclaration(nodePath: any) {
       const node = nodePath.node
       if (!node.source) {
-        return
-      }
-      const isNamespaceExport = node.specifiers.some(
-        (specifier: any) => specifier.type === "ExportNamespaceSpecifier"
-      )
-      if (!isNamespaceExport) {
         return
       }
       prepareDependencyGraph(node.source.value, rootpath, filePath, moduleEntry, visitedSet, visitedInCurrentCycle, dependencyGraph, nextId, moduleMap)
@@ -341,6 +335,14 @@ function specifierName(node: any) {
  * → exports.foo = foo
  * → exports.baz = bar
  *
+ * export { foo, bar as baz } from './mod'
+ * → var __stitchr_reexport = require(id)
+ * → exports.foo = __stitchr_reexport.foo
+ * → exports.baz = __stitchr_reexport.bar
+ *
+ * export { default as foo } from './mod'
+ * → exports.foo = require(id)
+ *
  * export * as ns from './mod'
  * → exports.ns = require(id)
  */
@@ -352,15 +354,10 @@ function rewriteExportNamedDeclaration(
 ) {
   const node = nodePath.node
 
+  // export { foo } from './mod'
+  // export { default as foo } from './mod'
   // export * as ns from './mod'
   if (node.source) {
-    const namespaceSpec = node.specifiers.find(
-      (specifier: any) => specifier.type === "ExportNamespaceSpecifier"
-    )
-    if (!namespaceSpec) {
-      return
-    }
-
     const depPath = resolveDependencyPath(node.source.value, projectRoot, filePath)
     const depId = moduleMap[depPath]
     if (depId === undefined) {
@@ -369,20 +366,102 @@ function rewriteExportNamedDeclaration(
       )
     }
 
-    nodePath.replaceWith({
-      type: "ExpressionStatement",
-      expression: {
-        type: "AssignmentExpression",
-        operator: "=",
-        left: {
-          type: "MemberExpression",
-          object: identifier("exports"),
-          property: identifier(specifierName(namespaceSpec.exported)),
-          computed: false,
+    const requireCall = createRequireCall(depId)
+
+    // export * as ns from './mod' → exports.ns = require(id)
+    const namespaceSpec = node.specifiers.find(
+      (specifier: any) => specifier.type === "ExportNamespaceSpecifier"
+    )
+    if (namespaceSpec) {
+      nodePath.replaceWith({
+        type: "ExpressionStatement",
+        expression: {
+          type: "AssignmentExpression",
+          operator: "=",
+          left: {
+            type: "MemberExpression",
+            object: identifier("exports"),
+            property: identifier(specifierName(namespaceSpec.exported)),
+            computed: false,
+          },
+          right: requireCall,
         },
-        right: createRequireCall(depId),
-      },
-    })
+      })
+      return
+    }
+
+    const valueSpecifiers = node.specifiers.filter(
+      (specifier: any) => specifier.type === "ExportSpecifier"
+    )
+    const statements: any[] = []
+
+    // Need a temp when any specifier pulls a named export (not default)
+    const needsTemp = valueSpecifiers.some(
+      (specifier: any) => specifierName(specifier.local) !== "default"
+    )
+
+    if (needsTemp) {
+      statements.push({
+        type: "VariableDeclaration",
+        kind: "var",
+        declarations: [
+          {
+            type: "VariableDeclarator",
+            id: identifier("__stitchr_reexport"),
+            init: requireCall,
+          },
+        ],
+      })
+    }
+
+    for (const specifier of valueSpecifiers) {
+      const exportName = specifierName(specifier.exported)
+      const imported = specifierName(specifier.local)
+
+      if (imported === "default") {
+        // CJS interop: default is the whole module.exports
+        statements.push({
+          type: "ExpressionStatement",
+          expression: {
+            type: "AssignmentExpression",
+            operator: "=",
+            left: {
+              type: "MemberExpression",
+              object: identifier("exports"),
+              property: identifier(exportName),
+              computed: false,
+            },
+            right: needsTemp ? identifier("__stitchr_reexport") : requireCall,
+          },
+        })
+      } else {
+        statements.push({
+          type: "ExpressionStatement",
+          expression: {
+            type: "AssignmentExpression",
+            operator: "=",
+            left: {
+              type: "MemberExpression",
+              object: identifier("exports"),
+              property: identifier(exportName),
+              computed: false,
+            },
+            right: {
+              type: "MemberExpression",
+              object: identifier("__stitchr_reexport"),
+              property: identifier(imported),
+              computed: false,
+            },
+          },
+        })
+      }
+    }
+
+    if (statements.length === 1) {
+      nodePath.replaceWith(statements[0])
+    } else {
+      nodePath.replaceWithMultiple(statements)
+    }
     return
   }
 
@@ -441,7 +520,7 @@ function rewriteExportNamedDeclaration(
     return
   }
 
-  // export { foo, bar as baz } — local list only, not `export { x } from`
+  // export { foo, bar as baz } — local list only
   if (node.specifiers.length === 0) {
     return
   }
@@ -469,8 +548,90 @@ function rewriteExportNamedDeclaration(
 }
 
 /**
+ * This is for the case when exporting default and named from a single file.
+ * Preserve any named exports already on module.exports when assigning default:
+ *   var __stitchr_named = module.exports;
+ *   module.exports = <default>;
+ *   for (var __stitchr_key in __stitchr_named) {
+ *     module.exports[__stitchr_key] = __stitchr_named[__stitchr_key];
+ *   }
+ */
+function rewriteDefaultExport(valueNode: any) {
+  return [
+    {
+      type: "VariableDeclaration",
+      kind: "var",
+      declarations: [
+        {
+          type: "VariableDeclarator",
+          id: identifier("__stitchr_named"),
+          init: {
+            type: "MemberExpression",
+            object: identifier("module"),
+            property: identifier("exports"),
+            computed: false,
+          },
+        },
+      ],
+    },
+    {
+      type: "ExpressionStatement",
+      expression: {
+        type: "AssignmentExpression",
+        operator: "=",
+        left: {
+          type: "MemberExpression",
+          object: identifier("module"),
+          property: identifier("exports"),
+          computed: false,
+        },
+        right: valueNode,
+      },
+    },
+    {
+      type: "ForInStatement",
+      left: {
+        type: "VariableDeclaration",
+        kind: "var",
+        declarations: [
+          {
+            type: "VariableDeclarator",
+            id: identifier("__stitchr_key"),
+          },
+        ],
+      },
+      right: identifier("__stitchr_named"),
+      body: {
+        type: "ExpressionStatement",
+        expression: {
+          type: "AssignmentExpression",
+          operator: "=",
+          left: {
+            type: "MemberExpression",
+            object: {
+              type: "MemberExpression",
+              object: identifier("module"),
+              property: identifier("exports"),
+              computed: false,
+            },
+            property: identifier("__stitchr_key"),
+            computed: true,
+          },
+          right: {
+            type: "MemberExpression",
+            object: identifier("__stitchr_named"),
+            property: identifier("__stitchr_key"),
+            computed: true,
+          },
+        },
+      },
+    },
+  ]
+}
+
+/**
  * export default expr
- * → module.exports = expr
+ * → module.exports = expr (keeps any prior named exports)
  */
 function rewriteExportDefaultDeclaration(nodePath: any) {
   const declaration = nodePath.node.declaration
@@ -483,20 +644,7 @@ function rewriteExportDefaultDeclaration(nodePath: any) {
   ) {
     nodePath.replaceWithMultiple([
       declaration,
-      {
-        type: "ExpressionStatement",
-        expression: {
-          type: "AssignmentExpression",
-          operator: "=",
-          left: {
-            type: "MemberExpression",
-            object: identifier("module"),
-            property: identifier("exports"),
-            computed: false,
-          },
-          right: identifier(declaration.id.name),
-        },
-      },
+      ...rewriteDefaultExport(identifier(declaration.id.name)),
     ])
     return
   }
@@ -520,20 +668,7 @@ function rewriteExportDefaultDeclaration(nodePath: any) {
     }
   }
 
-  nodePath.replaceWith({
-    type: "ExpressionStatement",
-    expression: {
-      type: "AssignmentExpression",
-      operator: "=",
-      left: {
-        type: "MemberExpression",
-        object: identifier("module"),
-        property: identifier("exports"),
-        computed: false,
-      },
-      right: valueNode,
-    },
-  })
+  nodePath.replaceWithMultiple(rewriteDefaultExport(valueNode))
 }
 
 /**
