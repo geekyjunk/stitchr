@@ -334,6 +334,9 @@ function specifierName(node: any) {
 }
 
 /**
+ * export const foo = 1 / export function foo() {} / export class Foo {}
+ * → <decl>; exports.foo = foo
+ *
  * export { foo, bar as baz }
  * → exports.foo = foo
  * → exports.baz = bar
@@ -383,8 +386,63 @@ function rewriteExportNamedDeclaration(
     return
   }
 
-  // Only local export lists — not `export const`, not `export { x } from`
-  if (node.declaration || node.specifiers.length === 0) {
+  // export const foo = 1 / export function foo() {} / export class Foo {}
+  if (node.declaration) {
+    const declaration = node.declaration
+    const statements: any[] = [declaration]
+
+    if (declaration.type === "VariableDeclaration") {
+      for (const declarator of declaration.declarations) {
+        if (declarator.id.type !== "Identifier") {
+          continue
+        }
+        statements.push({
+          type: "ExpressionStatement",
+          expression: {
+            type: "AssignmentExpression",
+            operator: "=",
+            left: {
+              type: "MemberExpression",
+              object: identifier("exports"),
+              property: identifier(declarator.id.name),
+              computed: false,
+            },
+            right: identifier(declarator.id.name),
+          },
+        })
+      }
+    } else if (
+      declaration.type === "FunctionDeclaration" ||
+      declaration.type === "ClassDeclaration"
+    ) {
+      if (declaration.id) {
+        statements.push({
+          type: "ExpressionStatement",
+          expression: {
+            type: "AssignmentExpression",
+            operator: "=",
+            left: {
+              type: "MemberExpression",
+              object: identifier("exports"),
+              property: identifier(declaration.id.name),
+              computed: false,
+            },
+            right: identifier(declaration.id.name),
+          },
+        })
+      }
+    }
+
+    if (statements.length === 1) {
+      nodePath.replaceWith(statements[0])
+    } else {
+      nodePath.replaceWithMultiple(statements)
+    }
+    return
+  }
+
+  // export { foo, bar as baz } — local list only, not `export { x } from`
+  if (node.specifiers.length === 0) {
     return
   }
 
