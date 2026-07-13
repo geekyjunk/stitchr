@@ -5,9 +5,18 @@ const { PARSER_OPTIONS } = require('./constants')
 const { createAst } = require('./ast')
 const { resolveFilePath, getRootPath } = require('./utils')
 const { createBundle } = require('./runtime')
+const { createDefaultLoaderRegistry } = require('./loaders/loaderRegistry')
 import type { DependencyGraph, ModuleMap, ModuleRegistry } from './types'
+import type { LoaderRegistryLike } from './loaders/loaderRegistry'
 
-function parseFile(filePath: string = "", options: { showGraph?: boolean, out?: string } = {}) {
+function parseFile(
+    filePath: string = "",
+    options: {
+        showGraph?: boolean
+        out?: string
+        loaderRegistry?: LoaderRegistryLike
+    } = {}
+) {
     const absoluteEntryPath = path.resolve(process.cwd(), filePath)
     const projectRoot = getRootPath(absoluteEntryPath)
     const relativeEntryPath = path.relative(projectRoot, absoluteEntryPath)
@@ -32,9 +41,11 @@ function parseFile(filePath: string = "", options: { showGraph?: boolean, out?: 
     visitedInCurrentCycle.delete(resolvedEntryPath)
     visitedSet.add(resolvedEntryPath)
 
+    const loaderRegistry = options.loaderRegistry ?? createDefaultLoaderRegistry()
+
     /** Generate Module Registry */
     const moduleRegistry: ModuleRegistry = {};
-    createModuleRegistry(moduleRegistry, dependencyGraph, moduleMap, projectRoot)
+    createModuleRegistry(moduleRegistry, dependencyGraph, moduleMap, projectRoot, loaderRegistry)
     const entryModuleId = moduleMap[relativeFilePath]
     if (entryModuleId === undefined) {
         throw new Error(`Entry module "${relativeFilePath}" was not registered`)

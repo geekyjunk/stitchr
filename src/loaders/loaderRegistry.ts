@@ -2,6 +2,10 @@ const { jsLoader } = require('./jsLoader')
 const { JS_EXTENSIONS } = require('../constants')
 import type { Loader } from './loader'
 
+export type LoaderRegistryLike = {
+  getLoader(ext: string): Loader | undefined
+}
+
 class LoaderRegistry {
   private loaders = new Map<string, Loader>()
 

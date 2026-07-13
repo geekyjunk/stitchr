@@ -7,6 +7,8 @@ const { resolveFilePath } = require('./utils')
 const { generate } = require("@babel/generator")
 
 import type { DependencyGraph } from './types'
+import type { Module } from './loaders/loader'
+import type { LoaderRegistryLike } from './loaders/loaderRegistry'
 
 function toRelativePath(rootpath: string, absolutePath: string) {
   return path.relative(rootpath, absolutePath).split(path.sep).join("/")
@@ -725,17 +727,51 @@ function rewriteExportAllDeclaration(
   })
 }
 
+function buildLoaderModule(
+  id: number,
+  filePath: string,
+  source: string,
+  deps: string[],
+  moduleMap: Record<string, number>
+): Module {
+  return {
+    id,
+    filePath,
+    source,
+    transformedSource: source,
+    dependencies: deps.map((resolvedPath) => ({
+      source: resolvedPath,
+      resolvedPath,
+      moduleId: moduleMap[resolvedPath] as number,
+    })),
+  }
+}
+
+function applyLoader(
+  loaderModule: Module,
+  loaderRegistry: LoaderRegistryLike
+): Module {
+  const ext = path.extname(loaderModule.filePath)
+  const loader = loaderRegistry.getLoader(ext)
+  if (!loader) {
+    return loaderModule
+  }
+  return loader.transform(loaderModule)
+}
+
 /**
  * 
  * @param moduleRegistry Mapping of module ID and its generated code
  * @param dependencyGraph dependency graph of all resolved imports
  * @param moduleMap mapping of module with its module ID
+ * @param loaderRegistry Supported loaders passed from parseFile()
  */
 function createModuleRegistry(
   moduleRegistry: Record<number, string>,
   dependencyGraph: DependencyGraph,
   moduleMap: Record<string, number>,
-  projectRoot: string
+  projectRoot: string,
+  loaderRegistry: LoaderRegistryLike
 ) {
   for (const filePath of Object.keys(dependencyGraph)) {
     const moduleEntry = dependencyGraph[filePath]
@@ -746,7 +782,11 @@ function createModuleRegistry(
     const { id } = moduleEntry
     const absoluteFilePath = path.resolve(projectRoot, filePath)
     const fileContent = fs.readFileSync(absoluteFilePath, 'utf-8')
-    const ast = createAst(fileContent, PARSER_OPTIONS)
+    const loaded = applyLoader(
+      buildLoaderModule(id, filePath, fileContent, moduleEntry.deps, moduleMap),
+      loaderRegistry
+    )
+    const ast = createAst(loaded.transformedSource, PARSER_OPTIONS)
 
     traverse(ast, {
       ImportDeclaration(nodePath: any) {
