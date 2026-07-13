@@ -6,7 +6,10 @@ const PARSER_OPTIONS = {
 
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]
 
+const JS_EXTENSIONS = ['.js', '.mjs', '.cjs']
+
 const LOADERS = [
     "css-loader"
 ]
-module.exports = { PARSER_OPTIONS, EXTENSIONS, LOADERS }
+
+module.exports = { PARSER_OPTIONS, EXTENSIONS, LOADERS, JS_EXTENSIONS }
