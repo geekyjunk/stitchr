@@ -1,5 +1,6 @@
 const { jsLoader } = require('./jsLoader')
-const { JS_EXTENSIONS } = require('../constants')
+const { cssLoader } = require('./cssLoader')
+const { JS_EXTENSIONS, CSS_EXTENSIONS } = require('../constants')
 import type { Loader } from './loader'
 
 export type LoaderRegistryLike = {
@@ -19,14 +20,19 @@ class LoaderRegistry {
 }
 
 /**
- * Registry with the identity JS loader registered for .js / .mjs / .cjs.
+ * Registry with built-in loaders:
+ * - identity JS loader for .js / .mjs / .cjs
+ * - CSS → string export for .css
  */
 function createDefaultLoaderRegistry() {
   const registry = new LoaderRegistry()
   for (const ext of JS_EXTENSIONS) {
     registry.registerLoader(ext, jsLoader)
   }
+  for (const ext of CSS_EXTENSIONS) {
+    registry.registerLoader(ext, cssLoader)
+  }
   return registry
 }
 
-module.exports = { LoaderRegistry, createDefaultLoaderRegistry, jsLoader }
+module.exports = { LoaderRegistry, createDefaultLoaderRegistry, jsLoader, cssLoader }

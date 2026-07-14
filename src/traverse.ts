@@ -2,13 +2,17 @@ const traverse = require("@babel/traverse").default
 const path = require('path')
 const fs = require('fs');
 const { createAst } = require('./ast')
-const { PARSER_OPTIONS } = require('./constants')
+const { PARSER_OPTIONS, EXTENSIONS } = require('./constants')
 const { resolveFilePath } = require('./utils')
 const { generate } = require("@babel/generator")
 
 import type { DependencyGraph } from './types'
 import type { Module } from './loaders/loader'
 import type { LoaderRegistryLike } from './loaders/loaderRegistry'
+
+function isScriptModule(filePath: string) {
+  return EXTENSIONS.includes(path.extname(filePath))
+}
 
 function toRelativePath(rootpath: string, absolutePath: string) {
   return path.relative(rootpath, absolutePath).split(path.sep).join("/")
@@ -81,6 +85,15 @@ function prepareDependencyGraph(nodePath: any, rootpath: string, filePath: strin
   }
 
   visitedInCurrentCycle.add(resolvedPathWithExtension)
+
+  // CSS and other non-script assets are leaf modules: register them, don't parse.
+  if (!isScriptModule(relativePath)) {
+    ensureModule(dependencyGraph, relativePath, nextId, moduleMap)
+    visitedInCurrentCycle.delete(resolvedPathWithExtension)
+    visitedSet.add(resolvedPathWithExtension)
+    return
+  }
+
   const fileContent = fs.readFileSync(resolvedPathWithExtension, 'utf-8')
   const resolvedFileAst = createAst(fileContent, PARSER_OPTIONS)
 

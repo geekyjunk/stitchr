@@ -8,7 +8,7 @@ function createBundle(
   return `(function (modules) {
     const cache = {}
     function __require(id) {
-      if (cache[id]) return cache[id];
+      if (cache[id]) return cache[id].exports;
       if (!modules[id]) {
         throw new Error('No module found with ID=', id);
       }

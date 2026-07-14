@@ -4,12 +4,11 @@ const PARSER_OPTIONS = {
     plugins: ['typescript']
 }
 
+/** Script/source extensions that may contain further imports (Babel-walkable). */
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]
 
 const JS_EXTENSIONS = ['.js', '.mjs', '.cjs']
 
-const LOADERS = [
-    "css-loader"
-]
+const CSS_EXTENSIONS = ['.css']
 
-module.exports = { PARSER_OPTIONS, EXTENSIONS, LOADERS, JS_EXTENSIONS }
+module.exports = { PARSER_OPTIONS, EXTENSIONS, JS_EXTENSIONS, CSS_EXTENSIONS }
