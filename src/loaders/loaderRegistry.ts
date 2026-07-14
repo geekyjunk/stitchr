@@ -1,6 +1,7 @@
 const { jsLoader } = require('./jsLoader')
 const { cssLoader } = require('./cssLoader')
-const { JS_EXTENSIONS, CSS_EXTENSIONS } = require('../constants')
+const { jsonLoader } = require('./jsonLoader')
+const { JS_EXTENSIONS, CSS_EXTENSIONS, JSON_EXTENSIONS } = require('../constants')
 import type { Loader } from './loader'
 
 export type LoaderRegistryLike = {
@@ -32,7 +33,10 @@ function createDefaultLoaderRegistry() {
   for (const ext of CSS_EXTENSIONS) {
     registry.registerLoader(ext, cssLoader)
   }
+  for (const ext of JSON_EXTENSIONS) {
+    registry.registerLoader(ext, jsonLoader)
+  }
   return registry
 }
 
-module.exports = { LoaderRegistry, createDefaultLoaderRegistry, jsLoader, cssLoader }
+module.exports = { LoaderRegistry, createDefaultLoaderRegistry, jsLoader, cssLoader, jsonLoader }

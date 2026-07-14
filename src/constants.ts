@@ -11,4 +11,6 @@ const JS_EXTENSIONS = ['.js', '.mjs', '.cjs']
 
 const CSS_EXTENSIONS = ['.css']
 
-module.exports = { PARSER_OPTIONS, EXTENSIONS, JS_EXTENSIONS, CSS_EXTENSIONS }
+const JSON_EXTENSIONS = ['.json']
+
+module.exports = { PARSER_OPTIONS, EXTENSIONS, JS_EXTENSIONS, CSS_EXTENSIONS, JSON_EXTENSIONS }
